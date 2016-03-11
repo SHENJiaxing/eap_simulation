@@ -29,6 +29,25 @@
 #include "hs20.h"
 #include "dfs.h"
 
+// for IPC
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
+#include <stdio.h>
+#include <string.h>
+
+#define MSGSZ 128
+
+/*
+ * Declare the message structure.
+ */
+typedef struct msgbuf {
+         long    mtype;
+         char    mtext[MSGSZ];
+         } message_buf;
+
+
+
 
 #ifdef NEED_AP_MLME
 
@@ -513,6 +532,13 @@ void handle_probe_req(struct hostapd_data *hapd,
 	int noack;
 	enum ssid_match_result res;
 
+	int msqid;
+    int msgflg = IPC_CREAT | 0666;
+    key_t key;
+    message_buf sbuf;
+    size_t buf_length;
+    char tmp [MSGSZ];
+
 	ie = mgmt->u.probe_req.variable;
 	if (len < IEEE80211_HDRLEN + sizeof(mgmt->u.probe_req))
 		return;
@@ -533,12 +559,32 @@ void handle_probe_req(struct hostapd_data *hapd,
 		return;
 	}
 
+
+    key = 2234;
+    if((msqid = msgget(key, msgflg )) < 0) {
+        perror("msgget");
+        exit(1);
+    }
+    sbuf.mtype = 1;
+    sprintf(tmp, "%u %d " MACSTR " %s", (unsigned)time(NULL), ssi_signal, MAC2STR(mgmt->sa), wpa_ssid_txt(elems.ssid, elems.ssid_len));
+    printf("!!!%s\n", tmp);
+    strcpy(sbuf.mtext, tmp);
+    buf_length = sizeof(long) + strlen(sbuf.mtext);
+
+    if(msgsnd(msqid, &sbuf, buf_length, IPC_NOWAIT) <0 ) {
+    	perror("msgsnd");
+    	// exit(1);
+    }
+
+
 	if ((!elems.ssid || !elems.supp_rates)) {
 		wpa_printf(MSG_DEBUG, "STA " MACSTR " sent probe request "
 			   "without SSID or supported rates element",
 			   MAC2STR(mgmt->sa));
 		return;
 	}
+
+	
 
 #ifdef CONFIG_P2P
 	if (hapd->p2p && elems.wps_ie) {
